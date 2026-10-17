@@ -1,64 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { supabaseServer } from "@/lib/supabase/server";
-
-type ParameterStat = {
-  control_form_id: number;
-  rfp_code: string;
-  form_name: string;
-  param_key: string;
-  label: string;
-  unit: string | null;
-  data_type: "numeric" | "text";
-  sort_order: number;
-  n: number;
-  promedio: number | null;
-  desvio: number | null;
-  minimo: number | null;
-  maximo: number | null;
-  n_texto: number;
-  n_conforme: number;
-  lie: number | null;
-  optimo: number | null;
-  lse: number | null;
-  expected_text: string | null;
-};
-
-type LotHeader = {
-  lot_reference: string;
-  product_name: string | null;
-  fecha_desde: string;
-  fecha_hasta: string;
-  controles: number;
-};
-
-async function getLotData(lote: string) {
-  const supabase = supabaseServer();
-
-  const [{ data: header, error: headerError }, { data: stats, error: statsError }] =
-    await Promise.all([
-      supabase
-        .from("lot_summary")
-        .select("lot_reference, product_name, fecha_desde, fecha_hasta, controles")
-        .eq("lot_reference", lote)
-        .maybeSingle<LotHeader>(),
-      supabase
-        .from("lot_parameter_stats")
-        .select(
-          "control_form_id, rfp_code, form_name, param_key, label, unit, data_type, sort_order, n, promedio, desvio, minimo, maximo, n_texto, n_conforme, lie, optimo, lse, expected_text"
-        )
-        .eq("lot_reference", lote)
-        .order("rfp_code")
-        .order("sort_order")
-        .returns<ParameterStat[]>(),
-    ]);
-
-  if (headerError) throw new Error(`No se pudo leer lot_summary: ${headerError.message}`);
-  if (statsError) throw new Error(`No se pudo leer lot_parameter_stats: ${statsError.message}`);
-
-  return { header, stats: stats ?? [] };
-}
+import { getLotData, type ParameterStat } from "@/lib/protocolo";
 
 function numberOrDash(value: number | null, digits = 2) {
   return value === null || value === undefined ? "—" : value.toFixed(digits);
@@ -110,12 +53,30 @@ async function LoteContent({ lote }: { lote: string }) {
   return (
     <>
       <header className="flex flex-col gap-1">
-        <p className="text-sm font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-          Protocolo de calidad
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          Lote {header.lot_reference}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+              Protocolo de calidad
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+              Lote {header.lot_reference}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/protocolo/${encodeURIComponent(header.lot_reference)}/excel`}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-emerald-400"
+            >
+              Descargar Excel
+            </a>
+            <a
+              href={`/protocolo/${encodeURIComponent(header.lot_reference)}/pdf`}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-emerald-400"
+            >
+              Descargar PDF
+            </a>
+          </div>
+        </div>
         <p className="text-zinc-600 dark:text-zinc-400">
           {header.product_name ?? "Producto sin asignar"} · {header.fecha_desde} —{" "}
           {header.fecha_hasta} · {header.controles} controles

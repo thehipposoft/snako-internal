@@ -236,12 +236,20 @@ export default function DashboardPage() {
             Controles de sal y humedad, últimos ~75 días — datos de ejemplo (sintéticos) hasta
             conectar las planillas reales.
           </p>
-          <Link
-            href="/protocolo"
-            className="mt-1 inline-flex w-fit items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400"
-          >
-            Ver protocolos por lote →
-          </Link>
+          <div className="mt-1 flex flex-wrap gap-4">
+            <Link
+              href="/protocolo"
+              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+            >
+              Ver protocolos por lote →
+            </Link>
+            <Link
+              href="/desviaciones"
+              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+            >
+              Ver desviaciones →
+            </Link>
+          </div>
         </header>
 
         <Suspense fallback={<DashboardSkeleton />}>
