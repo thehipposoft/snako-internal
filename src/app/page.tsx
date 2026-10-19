@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -224,11 +225,22 @@ function DashboardSkeleton() {
 export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
+      <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-16 sm:px-10">
         <header className="flex flex-col gap-2">
-          <p className="text-sm font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-            Snacko Automations
-          </p>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/logo-snacko.png"
+              alt="Snacko"
+              width={192}
+              height={103}
+              priority
+              className="h-8 w-auto"
+            />
+            <p className="text-sm font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
+              Automations
+            </p>
+          </div>
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             Panel de control de calidad
           </h1>
@@ -239,13 +251,13 @@ export default function DashboardPage() {
           <div className="mt-1 flex flex-wrap gap-4">
             <Link
               href="/protocolo"
-              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-sky-700 dark:text-sky-400"
             >
               Ver protocolos por lote →
             </Link>
             <Link
               href="/desviaciones"
-              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-sky-700 dark:text-sky-400"
             >
               Ver desviaciones →
             </Link>

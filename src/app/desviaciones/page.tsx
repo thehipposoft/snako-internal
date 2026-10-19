@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -231,14 +232,24 @@ function DeviationsSkeleton() {
 export default function DeviationsPage() {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
+      <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-16 sm:px-10">
         <header className="flex flex-col gap-2">
-          <Link href="/" className="text-sm text-emerald-600 dark:text-emerald-400">
+          <Link href="/" className="text-sm text-sky-700 dark:text-sky-400">
             ← Panel general
           </Link>
-          <p className="text-sm font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-            Snacko Automations
-          </p>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/logo-snacko.png"
+              alt="Snacko"
+              width={192}
+              height={103}
+              className="h-8 w-auto"
+            />
+            <p className="text-sm font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
+              Automations
+            </p>
+          </div>
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             Desviaciones y no conformidades
           </h1>

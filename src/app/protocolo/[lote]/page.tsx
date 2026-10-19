@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
@@ -41,8 +42,9 @@ function complianceBadge(row: ParameterStat) {
   );
 }
 
-async function LoteContent({ lote }: { lote: string }) {
-  const { header, stats } = await getLotData(lote);
+async function LoteContent({ params }: { params: Promise<{ lote: string }> }) {
+  const { lote } = await params;
+  const { header, stats } = await getLotData(decodeURIComponent(lote));
 
   if (!header) notFound();
 
@@ -55,9 +57,18 @@ async function LoteContent({ lote }: { lote: string }) {
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-              Protocolo de calidad
-            </p>
+            <div className="flex items-center gap-2">
+              <Image
+                src="/logo-snacko.png"
+                alt="Snacko"
+                width={192}
+                height={103}
+                className="h-7 w-auto"
+              />
+              <p className="text-sm font-medium uppercase tracking-wide text-sky-700 dark:text-sky-400">
+                Protocolo de calidad
+              </p>
+            </div>
             <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
               Lote {header.lot_reference}
             </h1>
@@ -65,13 +76,15 @@ async function LoteContent({ lote }: { lote: string }) {
           <div className="flex items-center gap-2">
             <a
               href={`/protocolo/${encodeURIComponent(header.lot_reference)}/excel`}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-emerald-400"
+              rel="nofollow"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-sky-400 hover:text-sky-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-sky-400"
             >
               Descargar Excel
             </a>
             <a
               href={`/protocolo/${encodeURIComponent(header.lot_reference)}/pdf`}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-emerald-400"
+              rel="nofollow"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-sky-400 hover:text-sky-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:text-sky-400"
             >
               Descargar PDF
             </a>
@@ -165,21 +178,20 @@ function LoteSkeleton() {
   );
 }
 
-export default async function ProtocoloLotePage({
+export default function ProtocoloLotePage({
   params,
 }: {
   params: Promise<{ lote: string }>;
 }) {
-  const { lote } = await params;
-
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
+      <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 py-16 sm:px-10">
-        <Link href="/protocolo" className="text-sm text-emerald-600 dark:text-emerald-400">
+        <Link href="/protocolo" className="text-sm text-sky-700 dark:text-sky-400">
           ← Todos los lotes
         </Link>
         <Suspense fallback={<LoteSkeleton />}>
-          <LoteContent lote={decodeURIComponent(lote)} />
+          <LoteContent params={params} />
         </Suspense>
       </main>
     </div>
