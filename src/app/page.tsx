@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -5,6 +6,12 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { StatTile } from "@/components/StatTile";
 import { BarList } from "@/components/BarList";
 import { TrendChart } from "@/components/TrendChart";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { rpcList, rpcSingle } from "@/lib/supabase/rpc";
+
+export const metadata: Metadata = {
+  title: "Panel de control de calidad · Snacko Calidad",
+};
 
 type Overview = {
   total_controles: number;
@@ -37,46 +44,27 @@ type ResampleRate = {
   pct_liberadas: number | null;
 };
 
-async function getDashboardData() {
+// Solo deja pasar fechas con forma YYYY-MM-DD (lo que manda un <input type="date">) —
+// cualquier otra cosa en el query string se ignora en vez de romper la consulta a Supabase.
+function sanitizeDate(value: string | undefined): string | null {
+  if (!value) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+async function getDashboardData(desde: string | null, hasta: string | null) {
   const supabase = supabaseServer();
+  const range = { p_date_from: desde, p_date_to: hasta };
 
   const [overview, trend, byLine, byShift, byEmployee, resample] = await Promise.all([
-    supabase.from("quality_overview").select("*").maybeSingle<Overview>(),
-    supabase
-      .from("quality_trend_weekly")
-      .select("*")
-      .order("semana")
-      .returns<TrendRow[]>(),
-    supabase
-      .from("quality_by_line")
-      .select("*")
-      .order("total_controles", { ascending: false })
-      .returns<GroupRow[]>(),
-    supabase
-      .from("quality_by_shift")
-      .select("*")
-      .order("total_controles", { ascending: false })
-      .returns<GroupRow[]>(),
-    supabase
-      .from("quality_by_employee")
-      .select("*")
-      .order("total_controles", { ascending: false })
-      .returns<GroupRow[]>(),
-    supabase.from("quality_resample_rate").select("*").maybeSingle<ResampleRate>(),
+    rpcSingle<Overview>(supabase, "quality_overview", range),
+    rpcList<TrendRow>(supabase, "quality_trend_weekly", range),
+    rpcList<GroupRow>(supabase, "quality_by_line", range),
+    rpcList<GroupRow>(supabase, "quality_by_shift", range),
+    rpcList<GroupRow>(supabase, "quality_by_employee", range),
+    rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
   ]);
 
-  for (const r of [overview, trend, byLine, byShift, byEmployee, resample]) {
-    if (r.error) throw new Error(`No se pudo leer el dashboard: ${r.error.message}`);
-  }
-
-  return {
-    overview: overview.data,
-    trend: trend.data ?? [],
-    byLine: byLine.data ?? [],
-    byShift: byShift.data ?? [],
-    byEmployee: byEmployee.data ?? [],
-    resample: resample.data,
-  };
+  return { overview, trend, byLine, byShift, byEmployee, resample };
 }
 
 function badgeTone(pct: number | null): "good" | "warning" | "critical" {
@@ -91,8 +79,17 @@ function formatWeek(iso: string) {
   return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
 }
 
-async function DashboardContent() {
-  const { overview, trend, byLine, byShift, byEmployee, resample } = await getDashboardData();
+async function DashboardContent({
+  desde,
+  hasta,
+}: {
+  desde: string | null;
+  hasta: string | null;
+}) {
+  const { overview, trend, byLine, byShift, byEmployee, resample } = await getDashboardData(
+    desde,
+    hasta
+  );
 
   const trendPoints = trend.map((t) => ({
     label: `Semana del ${formatWeek(t.semana)}`,
@@ -198,7 +195,7 @@ async function DashboardContent() {
       </section>
 
       <p className="text-xs text-zinc-400">
-        Todo lo de arriba se calcula en SQL (vistas <code>quality_*</code>) a partir de los
+        Todo lo de arriba se calcula en SQL (funciones <code>quality_*</code>) a partir de los
         controles individuales — nada hardcodeado en el frontend.
       </p>
     </>
@@ -208,6 +205,7 @@ async function DashboardContent() {
 function DashboardSkeleton() {
   return (
     <div className="flex flex-col gap-10">
+      <div className="h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-900" />
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-24 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-900" />
@@ -222,7 +220,27 @@ function DashboardSkeleton() {
   );
 }
 
-export default function DashboardPage() {
+type SearchParams = Promise<{ desde?: string; hasta?: string }>;
+
+// searchParams se lee dentro de <Suspense> para que el resto de la página
+// se prerenderice como shell estático (cacheComponents).
+async function FilteredDashboardContent({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const desde = sanitizeDate(params.desde);
+  const hasta = sanitizeDate(params.hasta);
+
+  return (
+    <>
+      <DateRangeFilter basePath="/" desde={desde} hasta={hasta} />
+
+      <Suspense key={`${desde ?? ""}_${hasta ?? ""}`} fallback={<DashboardSkeleton />}>
+        <DashboardContent desde={desde} hasta={hasta} />
+      </Suspense>
+    </>
+  );
+}
+
+export default function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
       <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
@@ -245,27 +263,39 @@ export default function DashboardPage() {
             Panel de control de calidad
           </h1>
           <p className="text-zinc-600 dark:text-zinc-400">
-            Controles de sal y humedad, últimos ~75 días — datos de ejemplo (sintéticos) hasta
-            conectar las planillas reales.
+            Controles de sal y humedad — datos de ejemplo (sintéticos) hasta conectar las
+            planillas reales.
           </p>
-          <div className="mt-1 flex flex-wrap gap-4">
+          <nav className="mt-4 grid gap-4 sm:grid-cols-2">
             <Link
               href="/protocolo"
-              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-sky-700 dark:text-sky-400"
+              className="group flex items-center justify-between gap-4 rounded-2xl bg-[#1C8FD6] px-6 py-5 text-white shadow-sm transition hover:bg-[#1679b8] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1C8FD6]"
             >
-              Ver protocolos por lote →
+              <span className="flex flex-col">
+                <span className="text-lg font-semibold">Ver protocolos por lote</span>
+                <span className="text-sm text-sky-100">Estadísticas y descargas por lote</span>
+              </span>
+              <span aria-hidden className="text-2xl transition group-hover:translate-x-1">
+                →
+              </span>
             </Link>
             <Link
               href="/desviaciones"
-              className="inline-flex w-fit items-center gap-1 text-sm font-medium text-sky-700 dark:text-sky-400"
+              className="group flex items-center justify-between gap-4 rounded-2xl bg-[#E2231A] px-6 py-5 text-white shadow-sm transition hover:bg-[#c01d15] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E2231A]"
             >
-              Ver desviaciones →
+              <span className="flex flex-col">
+                <span className="text-lg font-semibold">Ver desviaciones</span>
+                <span className="text-sm text-red-100">Controles fuera de especificación</span>
+              </span>
+              <span aria-hidden className="text-2xl transition group-hover:translate-x-1">
+                →
+              </span>
             </Link>
-          </div>
+          </nav>
         </header>
 
         <Suspense fallback={<DashboardSkeleton />}>
-          <DashboardContent />
+          <FilteredDashboardContent searchParams={searchParams} />
         </Suspense>
       </main>
     </div>

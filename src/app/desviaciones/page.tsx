@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { supabaseServer } from "@/lib/supabase/server";
 import { StatTile } from "@/components/StatTile";
 import { BarList } from "@/components/BarList";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { rpcList, rpcSingle } from "@/lib/supabase/rpc";
+
+export const metadata: Metadata = {
+  title: "Desviaciones y no conformidades",
+};
 
 type ResampleRate = {
   total_desviaciones: number;
@@ -40,40 +47,25 @@ type DeviationRow = {
   liberado: boolean | null;
 };
 
-async function getDeviationsData() {
+// Solo deja pasar fechas con forma YYYY-MM-DD (lo que manda un <input type="date">) —
+// cualquier otra cosa en el query string se ignora en vez de romper la consulta a Supabase.
+function sanitizeDate(value: string | undefined): string | null {
+  if (!value) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+async function getDeviationsData(desde: string | null, hasta: string | null) {
   const supabase = supabaseServer();
+  const range = { p_date_from: desde, p_date_to: hasta };
 
   const [resample, byParameter, byAction, detail] = await Promise.all([
-    supabase.from("quality_resample_rate").select("*").maybeSingle<ResampleRate>(),
-    supabase
-      .from("deviation_by_parameter")
-      .select("*")
-      .order("desviaciones", { ascending: false })
-      .returns<ByParameter[]>(),
-    supabase
-      .from("deviation_by_corrective_action")
-      .select("*")
-      .order("desviaciones", { ascending: false })
-      .returns<ByAction[]>(),
-    supabase
-      .from("deviation_detail")
-      .select(
-        "control_event_id, event_date, label, unit, value_numeric, lie, lse, line_name, shift_name, employee_name, corrective_action, remuestreado, liberado"
-      )
-      .order("event_date", { ascending: false })
-      .returns<DeviationRow[]>(),
+    rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
+    rpcList<ByParameter>(supabase, "deviation_by_parameter_range", range),
+    rpcList<ByAction>(supabase, "deviation_by_corrective_action_range", range),
+    rpcList<DeviationRow>(supabase, "deviation_detail_range", range),
   ]);
 
-  for (const r of [resample, byParameter, byAction, detail]) {
-    if (r.error) throw new Error(`No se pudo leer desviaciones: ${r.error.message}`);
-  }
-
-  return {
-    resample: resample.data,
-    byParameter: byParameter.data ?? [],
-    byAction: byAction.data ?? [],
-    detail: detail.data ?? [],
-  };
+  return { resample, byParameter, byAction, detail };
 }
 
 function resampleBadge(row: DeviationRow) {
@@ -98,8 +90,14 @@ function resampleBadge(row: DeviationRow) {
   );
 }
 
-async function DeviationsContent() {
-  const { resample, byParameter, byAction, detail } = await getDeviationsData();
+async function DeviationsContent({
+  desde,
+  hasta,
+}: {
+  desde: string | null;
+  hasta: string | null;
+}) {
+  const { resample, byParameter, byAction, detail } = await getDeviationsData(desde, hasta);
 
   return (
     <>
@@ -205,7 +203,7 @@ async function DeviationsContent() {
       </section>
 
       <p className="text-xs text-zinc-400">
-        Calculado en SQL (vistas <code>deviation_*</code>) a partir de los controles
+        Calculado en SQL (funciones <code>deviation_*</code>) a partir de los controles
         individuales marcados fuera de especificación — nada hardcodeado en el frontend.
       </p>
     </>
@@ -215,6 +213,7 @@ async function DeviationsContent() {
 function DeviationsSkeleton() {
   return (
     <div className="flex flex-col gap-10">
+      <div className="h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-900" />
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-24 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-900" />
@@ -229,7 +228,27 @@ function DeviationsSkeleton() {
   );
 }
 
-export default function DeviationsPage() {
+type SearchParams = Promise<{ desde?: string; hasta?: string }>;
+
+// searchParams se lee dentro de <Suspense> para que el resto de la página
+// se prerenderice como shell estático (cacheComponents).
+async function FilteredDeviationsContent({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const desde = sanitizeDate(params.desde);
+  const hasta = sanitizeDate(params.hasta);
+
+  return (
+    <>
+      <DateRangeFilter basePath="/desviaciones" desde={desde} hasta={hasta} />
+
+      <Suspense key={`${desde ?? ""}_${hasta ?? ""}`} fallback={<DeviationsSkeleton />}>
+        <DeviationsContent desde={desde} hasta={hasta} />
+      </Suspense>
+    </>
+  );
+}
+
+export default function DeviationsPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans dark:bg-black">
       <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
@@ -260,7 +279,7 @@ export default function DeviationsPage() {
         </header>
 
         <Suspense fallback={<DeviationsSkeleton />}>
-          <DeviationsContent />
+          <FilteredDeviationsContent searchParams={searchParams} />
         </Suspense>
       </main>
     </div>

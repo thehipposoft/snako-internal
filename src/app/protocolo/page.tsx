@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { supabaseServer } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  title: "Protocolos por lote",
+};
 
 type LotSummary = {
   lot_reference: string;
@@ -75,6 +80,9 @@ export default function ProtocoloIndexPage() {
       <div className="h-1 w-full bg-gradient-to-r from-[#FDCE00] via-[#1C8FD6] to-[#E2231A]" />
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16 sm:px-10">
         <header className="flex flex-col gap-2">
+          <Link href="/" className="text-sm text-sky-700 dark:text-sky-400">
+            ← Panel general
+          </Link>
           <div className="flex items-center gap-2">
             <Image
               src="/logo-snacko.png"

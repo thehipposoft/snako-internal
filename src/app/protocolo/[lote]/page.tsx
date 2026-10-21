@@ -1,8 +1,18 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getLotData, type ParameterStat } from "@/lib/protocolo";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ lote: string }>;
+}): Promise<Metadata> {
+  const { lote } = await params;
+  return { title: `Protocolo lote ${decodeURIComponent(lote)}` };
+}
 
 function numberOrDash(value: number | null, digits = 2) {
   return value === null || value === undefined ? "—" : value.toFixed(digits);
