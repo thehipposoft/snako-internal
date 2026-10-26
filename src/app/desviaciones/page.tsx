@@ -34,6 +34,7 @@ type ByAction = {
 type DeviationRow = {
   control_event_id: number;
   event_date: string;
+  event_time: string | null;
   label: string;
   unit: string | null;
   value_numeric: number | null;
@@ -161,6 +162,7 @@ async function DeviationsContent({
             <thead className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Fecha</th>
+                <th className="px-4 py-3 font-medium">Hora</th>
                 <th className="px-4 py-3 font-medium">Parámetro</th>
                 <th className="px-4 py-3 font-medium">Medido</th>
                 <th className="px-4 py-3 font-medium">Límite</th>
@@ -174,6 +176,9 @@ async function DeviationsContent({
               {detail.map((row) => (
                 <tr key={row.control_event_id}>
                   <td className="px-4 py-3 text-zinc-500">{row.event_date}</td>
+                  <td className="px-4 py-3 text-zinc-500 tabular-nums">
+                    {row.event_time ? row.event_time.slice(0, 5) : "—"}
+                  </td>
                   <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">{row.label}</td>
                   <td className="px-4 py-3 font-medium text-red-600 dark:text-red-400">
                     {row.value_numeric}
@@ -192,7 +197,7 @@ async function DeviationsContent({
               ))}
               {detail.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-zinc-500">
+                  <td colSpan={9} className="px-4 py-6 text-center text-zinc-500">
                     No hay desviaciones registradas.
                   </td>
                 </tr>

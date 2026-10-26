@@ -44,6 +44,19 @@ type ResampleRate = {
   pct_liberadas: number | null;
 };
 
+type ParamAverageRow = {
+  control_form_id: number;
+  rfp_code: string;
+  form_name: string;
+  param_key: string;
+  label: string;
+  unit: string | null;
+  sort_order: number;
+  line_name: string;
+  avg_value: number;
+  n: number;
+};
+
 // Solo deja pasar fechas con forma YYYY-MM-DD (lo que manda un <input type="date">) —
 // cualquier otra cosa en el query string se ignora en vez de romper la consulta a Supabase.
 function sanitizeDate(value: string | undefined): string | null {
@@ -55,16 +68,50 @@ async function getDashboardData(desde: string | null, hasta: string | null) {
   const supabase = supabaseServer();
   const range = { p_date_from: desde, p_date_to: hasta };
 
-  const [overview, trend, byLine, byShift, byEmployee, resample] = await Promise.all([
-    rpcSingle<Overview>(supabase, "quality_overview", range),
-    rpcList<TrendRow>(supabase, "quality_trend_weekly", range),
-    rpcList<GroupRow>(supabase, "quality_by_line", range),
-    rpcList<GroupRow>(supabase, "quality_by_shift", range),
-    rpcList<GroupRow>(supabase, "quality_by_employee", range),
-    rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
-  ]);
+  const [overview, trend, byLine, byShift, byEmployee, resample, paramAverages] =
+    await Promise.all([
+      rpcSingle<Overview>(supabase, "quality_overview", range),
+      rpcList<TrendRow>(supabase, "quality_trend_weekly", range),
+      rpcList<GroupRow>(supabase, "quality_by_line", range),
+      rpcList<GroupRow>(supabase, "quality_by_shift", range),
+      rpcList<GroupRow>(supabase, "quality_by_employee", range),
+      rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
+      rpcList<ParamAverageRow>(supabase, "quality_parameter_averages", range),
+    ]);
 
-  return { overview, trend, byLine, byShift, byEmployee, resample };
+  return { overview, trend, byLine, byShift, byEmployee, resample, paramAverages };
+}
+
+// Agrupa las filas (una por parámetro × línea) en una tabla pivot: una fila por
+// parámetro, una columna por línea. "Línea 1"/"Línea 2" siempre van primero (en ese
+// orden); cualquier otro valor de línea (o "Sin asignar") queda al final, alfabético.
+function pivotParamAverages(rows: ParamAverageRow[]) {
+  const lineRank = (name: string) => (name === "Línea 1" ? 0 : name === "Línea 2" ? 1 : 2);
+  const lines = Array.from(new Set(rows.map((r) => r.line_name))).sort(
+    (a, b) => lineRank(a) - lineRank(b) || a.localeCompare(b)
+  );
+
+  const values = new Map<string, Map<string, number>>();
+  const meta = new Map<string, { label: string; unit: string | null }>();
+  const order: string[] = [];
+
+  for (const r of rows) {
+    const key = `${r.control_form_id}:${r.param_key}`;
+    if (!meta.has(key)) {
+      meta.set(key, { label: r.label, unit: r.unit });
+      order.push(key);
+    }
+    if (!values.has(key)) values.set(key, new Map());
+    values.get(key)!.set(r.line_name, r.avg_value);
+  }
+
+  const paramRows = order.map((key) => ({
+    key,
+    ...meta.get(key)!,
+    values: values.get(key)!,
+  }));
+
+  return { lines, paramRows };
 }
 
 function badgeTone(pct: number | null): "good" | "warning" | "critical" {
@@ -86,10 +133,10 @@ async function DashboardContent({
   desde: string | null;
   hasta: string | null;
 }) {
-  const { overview, trend, byLine, byShift, byEmployee, resample } = await getDashboardData(
-    desde,
-    hasta
-  );
+  const { overview, trend, byLine, byShift, byEmployee, resample, paramAverages } =
+    await getDashboardData(desde, hasta);
+
+  const { lines, paramRows } = pivotParamAverages(paramAverages);
 
   const trendPoints = trend.map((t) => ({
     label: `Semana del ${formatWeek(t.semana)}`,
@@ -155,6 +202,51 @@ async function DashboardContent({
             />
           </div>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+          Promedios por parámetro y línea
+        </h2>
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full min-w-[480px] text-left text-sm">
+            <thead className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Parámetro</th>
+                {lines.map((line) => (
+                  <th key={line} className="px-4 py-3 font-medium">
+                    {line}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {paramRows.map((row) => (
+                <tr key={row.key}>
+                  <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">{row.label}</td>
+                  {lines.map((line) => (
+                    <td key={line} className="px-4 py-3 tabular-nums text-zinc-500">
+                      {row.values.has(line)
+                        ? `${row.values.get(line)}${row.unit ?? ""}`
+                        : "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {paramRows.length === 0 && (
+                <tr>
+                  <td colSpan={1 + lines.length} className="px-4 py-6 text-center text-zinc-500">
+                    No hay datos para el período seleccionado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Promedio de cada parámetro medido durante el período filtrado, por línea de
+          producción.
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">
