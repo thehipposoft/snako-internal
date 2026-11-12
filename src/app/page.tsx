@@ -57,6 +57,18 @@ type ParamAverageRow = {
   n: number;
 };
 
+type CamposPolaresRow = {
+  event_date: string;
+  tanque_en_uso: number | null;
+  tanque_1_cp: number | null;
+  tanque_2_cp: number | null;
+  tanque_3_cp: number | null;
+  tanque_4_cp: number | null;
+  tanque_5_cp: number | null;
+  observaciones: string | null;
+  employee_name: string | null;
+};
+
 // Solo deja pasar fechas con forma YYYY-MM-DD (lo que manda un <input type="date">) —
 // cualquier otra cosa en el query string se ignora en vez de romper la consulta a Supabase.
 function sanitizeDate(value: string | undefined): string | null {
@@ -68,7 +80,7 @@ async function getDashboardData(desde: string | null, hasta: string | null) {
   const supabase = supabaseServer();
   const range = { p_date_from: desde, p_date_to: hasta };
 
-  const [overview, trend, byLine, byShift, byEmployee, resample, paramAverages] =
+  const [overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares] =
     await Promise.all([
       rpcSingle<Overview>(supabase, "quality_overview", range),
       rpcList<TrendRow>(supabase, "quality_trend_weekly", range),
@@ -77,9 +89,16 @@ async function getDashboardData(desde: string | null, hasta: string | null) {
       rpcList<GroupRow>(supabase, "quality_by_employee", range),
       rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
       rpcList<ParamAverageRow>(supabase, "quality_parameter_averages", range),
+      rpcList<CamposPolaresRow>(supabase, "campos_polares_readings", range),
     ]);
 
-  return { overview, trend, byLine, byShift, byEmployee, resample, paramAverages };
+  return { overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares };
+}
+
+// "—" para null (tanque vacío/sin leer, o CP no detectado se guarda como 0 — ver
+// OBSERVACIONES de la planilla real).
+function formatCp(value: number | null) {
+  return value === null ? "—" : `${value}%`;
 }
 
 // Agrupa las filas (una por parámetro × línea) en una tabla pivot: una fila por
@@ -133,7 +152,7 @@ async function DashboardContent({
   desde: string | null;
   hasta: string | null;
 }) {
-  const { overview, trend, byLine, byShift, byEmployee, resample, paramAverages } =
+  const { overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares } =
     await getDashboardData(desde, hasta);
 
   const { lines, paramRows } = pivotParamAverages(paramAverages);
@@ -246,6 +265,66 @@ async function DashboardContent({
         <p className="text-xs text-zinc-400">
           Promedio de cada parámetro medido durante el período filtrado, por línea de
           producción.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+          Campos polares (tanques externos)
+        </h2>
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Fecha</th>
+                <th className="px-4 py-3 font-medium">Tanque 1</th>
+                <th className="px-4 py-3 font-medium">Tanque 2</th>
+                <th className="px-4 py-3 font-medium">Tanque 3</th>
+                <th className="px-4 py-3 font-medium">Tanque 4</th>
+                <th className="px-4 py-3 font-medium">Tanque 5</th>
+                <th className="px-4 py-3 font-medium">En uso</th>
+                <th className="px-4 py-3 font-medium">Realizó</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {camposPolares.map((row) => (
+                <tr key={row.event_date}>
+                  <td className="px-4 py-3 text-zinc-500">{row.event_date}</td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-800 dark:text-zinc-200">
+                    {formatCp(row.tanque_1_cp)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-800 dark:text-zinc-200">
+                    {formatCp(row.tanque_2_cp)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-800 dark:text-zinc-200">
+                    {formatCp(row.tanque_3_cp)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-800 dark:text-zinc-200">
+                    {formatCp(row.tanque_4_cp)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-800 dark:text-zinc-200">
+                    {formatCp(row.tanque_5_cp)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-500">
+                    {row.tanque_en_uso ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-500">{row.employee_name ?? "—"}</td>
+                </tr>
+              ))}
+              {camposPolares.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-6 text-center text-zinc-500">
+                    No hay controles de campos polares en el período seleccionado (es un
+                    control quincenal, no por lote).
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Control quincenal de compuestos polares (%) del aceite en cada tanque externo —
+          no está asociado a línea/turno/producto, por eso va en tabla aparte.
         </p>
       </section>
 
