@@ -35,6 +35,7 @@ type DeviationRow = {
   control_event_id: number;
   event_date: string;
   event_time: string | null;
+  param_key: string;
   label: string;
   unit: string | null;
   value_numeric: number | null;
@@ -174,7 +175,10 @@ async function DeviationsContent({
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {detail.map((row) => (
-                <tr key={row.control_event_id}>
+                // Una fila puede traer varios parámetros medidos para el mismo control
+                // (ej. Humedad mide humedad_pct + 3 defectos) — control_event_id solo no
+                // alcanza como key.
+                <tr key={`${row.control_event_id}-${row.param_key}`}>
                   <td className="px-4 py-3 text-zinc-500">{row.event_date}</td>
                   <td className="px-4 py-3 text-zinc-500 tabular-nums">
                     {row.event_time ? row.event_time.slice(0, 5) : "—"}

@@ -6,7 +6,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { StatTile } from "@/components/StatTile";
 import { BarList } from "@/components/BarList";
 import { TrendChart } from "@/components/TrendChart";
-import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { DateRangeFilter, type ProductOption } from "@/components/DateRangeFilter";
 import { rpcList, rpcSingle } from "@/lib/supabase/rpc";
 
 export const metadata: Metadata = {
@@ -44,6 +44,15 @@ type ResampleRate = {
   pct_liberadas: number | null;
 };
 
+type FormRow = {
+  control_form_id: number;
+  rfp_code: string;
+  form_name: string;
+  total_controles: number;
+  conformes: number;
+  pct_cumplimiento: number | null;
+};
+
 type ParamAverageRow = {
   control_form_id: number;
   rfp_code: string;
@@ -76,23 +85,45 @@ function sanitizeDate(value: string | undefined): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-async function getDashboardData(desde: string | null, hasta: string | null) {
+// Solo deja pasar un id numérico (lo que manda el <select> de producto) — cualquier otra
+// cosa en el query string se ignora en vez de romper la consulta a Supabase.
+function sanitizeProductId(value: string | undefined): number | null {
+  if (!value) return null;
+  return /^\d+$/.test(value) ? Number(value) : null;
+}
+
+async function getProductOptions(): Promise<ProductOption[]> {
+  const supabase = supabaseServer();
+  const { data, error } = await supabase.from("product").select("id, name").order("name");
+  if (error) throw new Error(`product list: ${error.message}`);
+  return (data ?? []) as ProductOption[];
+}
+
+async function getDashboardData(
+  desde: string | null,
+  hasta: string | null,
+  productoId: number | null
+) {
   const supabase = supabaseServer();
   const range = { p_date_from: desde, p_date_to: hasta };
 
-  const [overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares] =
+  const [overview, trend, byLine, byShift, byForm, byEmployee, resample, paramAverages, camposPolares] =
     await Promise.all([
       rpcSingle<Overview>(supabase, "quality_overview", range),
       rpcList<TrendRow>(supabase, "quality_trend_weekly", range),
       rpcList<GroupRow>(supabase, "quality_by_line", range),
       rpcList<GroupRow>(supabase, "quality_by_shift", range),
+      rpcList<FormRow>(supabase, "quality_by_form", range),
       rpcList<GroupRow>(supabase, "quality_by_employee", range),
       rpcSingle<ResampleRate>(supabase, "quality_resample_rate", range),
-      rpcList<ParamAverageRow>(supabase, "quality_parameter_averages", range),
+      rpcList<ParamAverageRow>(supabase, "quality_parameter_averages", {
+        ...range,
+        p_product_id: productoId,
+      }),
       rpcList<CamposPolaresRow>(supabase, "campos_polares_readings", range),
     ]);
 
-  return { overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares };
+  return { overview, trend, byLine, byShift, byForm, byEmployee, resample, paramAverages, camposPolares };
 }
 
 // "—" para null (tanque vacío/sin leer, o CP no detectado se guarda como 0 — ver
@@ -148,12 +179,14 @@ function formatWeek(iso: string) {
 async function DashboardContent({
   desde,
   hasta,
+  productoId,
 }: {
   desde: string | null;
   hasta: string | null;
+  productoId: number | null;
 }) {
-  const { overview, trend, byLine, byShift, byEmployee, resample, paramAverages, camposPolares } =
-    await getDashboardData(desde, hasta);
+  const { overview, trend, byLine, byShift, byForm, byEmployee, resample, paramAverages, camposPolares } =
+    await getDashboardData(desde, hasta, productoId);
 
   const { lines, paramRows } = pivotParamAverages(paramAverages);
 
@@ -264,11 +297,12 @@ async function DashboardContent({
         </div>
         <p className="text-xs text-zinc-400">
           Promedio de cada parámetro medido durante el período filtrado, por línea de
-          producción.
+          producción. El filtro de producto (arriba) se aplica solo a esta tabla. "SAL (%)"
+          es el promedio de las dos lecturas que se toman por muestra.
         </p>
       </section>
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3 hidden">
         <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
           Campos polares (tanques externos)
         </h2>
@@ -325,6 +359,48 @@ async function DashboardContent({
         <p className="text-xs text-zinc-400">
           Control quincenal de compuestos polares (%) del aceite en cada tanque externo —
           no está asociado a línea/turno/producto, por eso va en tabla aparte.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+          Controles por tipo de análisis
+        </h2>
+        <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Análisis</th>
+                <th className="px-4 py-3 font-medium">Controles</th>
+                <th className="px-4 py-3 font-medium">% Cumplimiento</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {byForm.map((row) => (
+                <tr key={row.control_form_id}>
+                  <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">
+                    {row.form_name}
+                    <span className="ml-2 text-xs text-zinc-400">{row.rfp_code}</span>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-500">{row.total_controles}</td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-500">
+                    {row.pct_cumplimiento !== null ? `${row.pct_cumplimiento}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+              {byForm.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
+                    No hay datos para el período seleccionado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Cantidad de controles y % de cumplimiento por tipo de análisis (Sal, Humedad,
+          producto envasado, etc.) — para comparar el cumplimiento entre áreas.
         </p>
       </section>
 
@@ -391,7 +467,7 @@ function DashboardSkeleton() {
   );
 }
 
-type SearchParams = Promise<{ desde?: string; hasta?: string }>;
+type SearchParams = Promise<{ desde?: string; hasta?: string; producto?: string }>;
 
 // searchParams se lee dentro de <Suspense> para que el resto de la página
 // se prerenderice como shell estático (cacheComponents).
@@ -399,13 +475,24 @@ async function FilteredDashboardContent({ searchParams }: { searchParams: Search
   const params = await searchParams;
   const desde = sanitizeDate(params.desde);
   const hasta = sanitizeDate(params.hasta);
+  const productoId = sanitizeProductId(params.producto);
+  const productOptions = await getProductOptions();
 
   return (
     <>
-      <DateRangeFilter basePath="/" desde={desde} hasta={hasta} />
+      <DateRangeFilter
+        basePath="/"
+        desde={desde}
+        hasta={hasta}
+        productoId={productoId}
+        productOptions={productOptions}
+      />
 
-      <Suspense key={`${desde ?? ""}_${hasta ?? ""}`} fallback={<DashboardSkeleton />}>
-        <DashboardContent desde={desde} hasta={hasta} />
+      <Suspense
+        key={`${desde ?? ""}_${hasta ?? ""}_${productoId ?? ""}`}
+        fallback={<DashboardSkeleton />}
+      >
+        <DashboardContent desde={desde} hasta={hasta} productoId={productoId} />
       </Suspense>
     </>
   );
